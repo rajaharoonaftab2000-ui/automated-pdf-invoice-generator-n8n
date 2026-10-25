@@ -1,0 +1,199 @@
+{
+  "name": "Automated Invoice Generator",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 18
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "id": "cfe3a5ce-c4c8-4ef2-9eba-7d2564566f77",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "YOUR_CALENDAR_ID",
+          "mode": "id"
+        },
+        "timeMin": "={{ $today.minus({ days: 7 }) }}",
+        "timeMax": "={{ $now.plus({ days: 7 }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        224,
+        0
+      ],
+      "id": "a84c9bd4-5dd1-4845-b5d7-996aa9af5628",
+      "name": "Get many events",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const description = $input.item.json.description || '';\nconst chatIdMatch = description.match(/Chat ID:\\s*(\\S+)/);\nconst nameMatch = description.match(/Customer Name:\\s*(.+)/);\nconst summary = $input.item.json.summary || '';\n\n// Price list for services\nconst prices = {\n  'Haircut': 1000,\n  'Facial': 2500,\n  'Waxing': 1500,\n  'Hair Color': 4000,\n  'Manicure': 800,\n  'Pedicure': 1000\n};\n\nlet amount = 0;\nfor (const service in prices) {\n  if (summary.toLowerCase().includes(service.toLowerCase())) {\n    amount = prices[service];\n    break;\n  }\n}\n\nreturn {\n  json: {\n    chatId: chatIdMatch ? chatIdMatch[1] : null,\n    customerName: nameMatch ? nameMatch[1].trim() : 'Customer',\n    service: summary,\n    amount: amount,\n    date: $input.item.json.start.dateTime || $input.item.json.start.date,\n    invoiceNumber: 'INV-' + Math.floor(Math.random() * 100000)\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ],
+      "id": "8e6ee337-d4b3-4e90-a487-55c6166117a2",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const data = $input.item.json;\n\nconst html = `\n<!DOCTYPE html>\n<html>\n<head>\n<style>\n  body { font-family: Arial, sans-serif; padding: 40px; color: #333; }\n  .invoice { max-width: 600px; margin: auto; border: 1px solid #ddd; padding: 30px; }\n  h1 { color: #222; }\n  table { width: 100%; border-collapse: collapse; margin-top: 20px; }\n  td { padding: 10px; border-bottom: 1px solid #eee; }\n  .total { font-size: 20px; font-weight: bold; margin-top: 20px; }\n</style>\n</head>\n<body>\n  <div class=\"invoice\">\n    <h1>Invoice</h1>\n    <p><b>Invoice #:</b> ${data.invoiceNumber}</p>\n    <p><b>Customer:</b> ${data.customerName}</p>\n    <p><b>Date:</b> ${data.date}</p>\n    <table>\n      <tr><td>Service</td><td>${data.service}</td></tr>\n      <tr><td>Amount</td><td>Rs. ${data.amount}</td></tr>\n    </table>\n    <p class=\"total\">Total: Rs. ${data.amount}</p>\n    <p>Thank you for choosing our salon!</p>\n  </div>\n</body>\n</html>\n`;\n\nreturn { json: { ...data, html: html } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "id": "24220a5b-bd0a-4f8a-bc68-597c55b3a7d6",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.html2pdf.app/v1/generate",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "YOUR_HTML2PDF_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "html",
+              "value": "={{ $json.html }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        896,
+        0
+      ],
+      "id": "d23a83cd-ef21-47e8-959d-15ca91364a08",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "sendTo": "recipient@example.com",
+        "subject": "=Invoice - {{ $('Code in JavaScript1').item.json.invoiceNumber }}",
+        "message": "Please find attached your invoice. Thank you for choosing our salon!",
+        "options": {
+          "appendAttribution": false,
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {}
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        0
+      ],
+      "id": "1218f37d-4469-462a-8c00-bb21ed92099b",
+      "name": "Send a message"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get many events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many events": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  }
+}
